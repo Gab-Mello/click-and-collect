@@ -9,7 +9,9 @@ import (
 	"syscall"
 
 	"github.com/gab-mello/click-and-collect/internal/config"
+	"github.com/gab-mello/click-and-collect/internal/orders"
 	"github.com/gab-mello/click-and-collect/internal/server"
+	"github.com/gab-mello/click-and-collect/internal/stores"
 )
 
 func main() {
@@ -30,7 +32,15 @@ func run() error {
 	}))
 	slog.SetDefault(logger)
 
-	router := server.NewRouter(logger)
+	storesRepo := stores.NewRepo()
+	storesSvc := stores.NewService(storesRepo)
+	storesH := stores.NewHandler(storesSvc)
+
+	ordersRepo := orders.NewRepo()
+	ordersSvc := orders.NewService(ordersRepo, storesSvc)
+	ordersH := orders.NewHandler(ordersSvc)
+
+	router := server.NewRouter(storesH, ordersH)
 	srv := server.New(cfg, logger, router)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

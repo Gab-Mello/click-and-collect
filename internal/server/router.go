@@ -2,14 +2,15 @@ package server
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 
+	"github.com/gab-mello/click-and-collect/internal/orders"
+	"github.com/gab-mello/click-and-collect/internal/stores"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func NewRouter(logger *slog.Logger) http.Handler {
+func NewRouter(storesH *stores.Handler, ordersH *orders.Handler) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -19,8 +20,11 @@ func NewRouter(logger *slog.Logger) http.Handler {
 
 	r.Get("/healthz", healthz)
 
-	// Domain routes are mounted here as the API grows, e.g.:
-	// orders.New(...).Mount(r)
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/health", healthz)
+		storesH.Mount(r)
+		ordersH.Mount(r)
+	})
 
 	return r
 }
