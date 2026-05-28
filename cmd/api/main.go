@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/gab-mello/click-and-collect/internal/config"
+	"github.com/gab-mello/click-and-collect/internal/db"
 	"github.com/gab-mello/click-and-collect/internal/orders"
 	"github.com/gab-mello/click-and-collect/internal/server"
 	"github.com/gab-mello/click-and-collect/internal/stores"
@@ -32,19 +34,25 @@ func run() error {
 	}))
 	slog.SetDefault(logger)
 
-	storesRepo := stores.NewRepo()
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("database: %w", err)
+	}
+	defer pool.Close()
+
+	storesRepo := stores.NewRepo(pool)
 	storesSvc := stores.NewService(storesRepo)
 	storesH := stores.NewHandler(storesSvc)
 
-	ordersRepo := orders.NewRepo()
+	ordersRepo := orders.NewRepo(pool)
 	ordersSvc := orders.NewService(ordersRepo, storesSvc)
 	ordersH := orders.NewHandler(ordersSvc)
 
 	router := server.NewRouter(storesH, ordersH)
 	srv := server.New(cfg, logger, router)
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	return srv.Run(ctx)
 }

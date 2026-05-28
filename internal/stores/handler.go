@@ -27,13 +27,18 @@ type listResponse struct {
 	Stores []Store `json:"stores"`
 }
 
-func (h *Handler) list(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, listResponse{Stores: h.svc.List()})
+func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
+	list, err := h.svc.List(r.Context())
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, listResponse{Stores: list})
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	s, err := h.svc.Get(id)
+	s, err := h.svc.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			httpx.WriteError(w, http.StatusNotFound, "store_not_found", err.Error())

@@ -1,4 +1,4 @@
-.PHONY: run build test fmt tidy help
+.PHONY: run build test fmt tidy migrate help
 
 run: ## Run the API
 	go run ./cmd/api
@@ -14,6 +14,10 @@ fmt: ## Format the code
 
 tidy: ## Tidy go.mod / go.sum
 	go mod tidy
+
+migrate: ## Apply SQL migrations against $$DATABASE_URL (idempotent)
+	@test -n "$$DATABASE_URL" || { echo "DATABASE_URL is not set"; exit 1; }
+	psql "$$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0001_init.sql
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'

@@ -15,6 +15,18 @@ services:
     ports:
       - "5432:5432"
 
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    environment:
+      PGPASSWORD: postgres
+    entrypoint: ["sh", "-c", "psql -h postgres -U postgres -d click_collect -v ON_ERROR_STOP=1 -f /migrations/0001_init.sql"]
+    restart: "no"
+
   api:
     build: .
     env_file: .env
@@ -25,6 +37,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   pgdata:

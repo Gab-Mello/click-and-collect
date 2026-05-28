@@ -30,6 +30,7 @@ Domain packages (e.g. `internal/orders/`) are added as features arrive — each 
 | `make test`   | Run tests with `-race`     |
 | `make fmt`    | Format code                |
 | `make tidy`   | Tidy `go.mod` / `go.sum`   |
+| `make migrate`| Apply SQL migrations       |
 
 ## Conventions
 
@@ -40,12 +41,14 @@ Domain packages (e.g. `internal/orders/`) are added as features arrive — each 
 
 ## Running with Docker
 
-For local development with the full stack (API + Postgres):
+For local development with the full stack (Postgres + migrations + API):
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
+
+Compose runs three services in order: `postgres` (waits for healthcheck) → `migrate` (one-shot, applies `migrations/0001_init.sql`) → `api`. The API only starts after migrations have completed successfully.
 
 The API will be available at:
 
@@ -72,9 +75,19 @@ To reset the database volume too:
 docker compose down -v
 ```
 
-### Database mode
+### Database
 
-The API currently runs with **in-memory repositories** seeded with sample stores — Postgres is launched by compose but not yet wired to the API. The `DATABASE_URL` config is in place; PostgreSQL persistence will be added in a follow-up step.
+All data is persisted in Postgres — `stores`, `orders`, and `notifications`. The API requires `DATABASE_URL` to be set and will refuse to start without it.
+
+Migrations live in `migrations/0001_init.sql` and include the seed stores. They are idempotent (safe to re-run): `CREATE TABLE IF NOT EXISTS` and `INSERT ... ON CONFLICT DO NOTHING`.
+
+To apply migrations against a host or remote Postgres (e.g. when running the API directly with `make run`), use:
+
+```bash
+make migrate   # requires psql + DATABASE_URL set in your env
+```
+
+`docker compose down -v` wipes the database volume — the next `up` will re-seed via the `migrate` service.
 
 ### Host vs container hostnames
 

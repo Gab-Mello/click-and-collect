@@ -54,7 +54,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	o, err := h.svc.Create(CreateInput{
+	o, err := h.svc.Create(r.Context(), CreateInput{
 		CustomerName:   req.CustomerName,
 		CustomerEmail:  req.CustomerEmail,
 		DeliveryMethod: DeliveryMethod(req.DeliveryMethod),
@@ -69,7 +69,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	o, err := h.svc.Get(id)
+	o, err := h.svc.Get(r.Context(), id)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -84,7 +84,7 @@ func (h *Handler) updateStatus(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
 		return
 	}
-	o, n, err := h.svc.UpdateStatus(id, Status(req.Status))
+	o, n, err := h.svc.UpdateStatus(r.Context(), id, Status(req.Status))
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -94,7 +94,7 @@ func (h *Handler) updateStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) notifications(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	ns, err := h.svc.ListNotifications(id)
+	ns, err := h.svc.ListNotifications(r.Context(), id)
 	if err != nil {
 		writeServiceError(w, err)
 		return

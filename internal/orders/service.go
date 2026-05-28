@@ -1,6 +1,7 @@
 package orders
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -40,7 +41,7 @@ type CreateInput struct {
 	PickupStoreID  *string
 }
 
-func (s *Service) Create(in CreateInput) (Order, error) {
+func (s *Service) Create(ctx context.Context, in CreateInput) (Order, error) {
 	if strings.TrimSpace(in.CustomerName) == "" {
 		return Order{}, ErrCustomerNameRequired
 	}
@@ -71,7 +72,7 @@ func (s *Service) Create(in CreateInput) (Order, error) {
 		if in.PickupStoreID == nil || strings.TrimSpace(*in.PickupStoreID) == "" {
 			return Order{}, ErrPickupStoreRequired
 		}
-		store, err := s.stores.Get(*in.PickupStoreID)
+		store, err := s.stores.Get(ctx, *in.PickupStoreID)
 		if err != nil {
 			return Order{}, err
 		}
@@ -84,29 +85,35 @@ func (s *Service) Create(in CreateInput) (Order, error) {
 		o.PickupCode = &code
 	}
 
-	s.repo.Create(o)
+	if err := s.repo.Create(ctx, o); err != nil {
+		return Order{}, err
+	}
 	return o, nil
 }
 
-func (s *Service) Get(id string) (Order, error) {
-	return s.repo.Get(id)
+func (s *Service) Get(ctx context.Context, id string) (Order, error) {
+	return s.repo.Get(ctx, id)
 }
 
-func (s *Service) ListNotifications(orderID string) ([]Notification, error) {
-	if _, err := s.repo.Get(orderID); err != nil {
+func (s *Service) ListNotifications(ctx context.Context, orderID string) ([]Notification, error) {
+	if _, err := s.repo.Get(ctx, orderID); err != nil {
 		return nil, err
 	}
-	return s.repo.ListNotifications(orderID), nil
+	return s.repo.ListNotifications(ctx, orderID)
 }
 
 // UpdateStatus transitions the order and, when the new status is READY_FOR_PICKUP
 // for a pickup-in-store order, records a simulated notification (RF04). The
 // returned notification pointer is non-nil only when one was created.
-func (s *Service) UpdateStatus(id string, next Status) (Order, *Notification, error) {
+//
+// Update and AddNotification run as separate statements; on a partial failure a
+// retry could produce a duplicate notification. Acceptable for the MVP — wrap in
+// a pgx.Tx if that ever becomes a real concern.
+func (s *Service) UpdateStatus(ctx context.Context, id string, next Status) (Order, *Notification, error) {
 	if !next.Valid() {
 		return Order{}, nil, ErrInvalidStatus
 	}
-	o, err := s.repo.Get(id)
+	o, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return Order{}, nil, err
 	}
@@ -116,7 +123,7 @@ func (s *Service) UpdateStatus(id string, next Status) (Order, *Notification, er
 
 	o.Status = next
 	o.UpdatedAt = s.clock()
-	if err := s.repo.Update(o); err != nil {
+	if err := s.repo.Update(ctx, o); err != nil {
 		return Order{}, nil, err
 	}
 
@@ -127,7 +134,9 @@ func (s *Service) UpdateStatus(id string, next Status) (Order, *Notification, er
 			Message:   fmt.Sprintf("Order %s is ready for pickup. Use code %s.", o.ID, derefCode(o.PickupCode)),
 			CreatedAt: s.clock(),
 		}
-		s.repo.AddNotification(n)
+		if err := s.repo.AddNotification(ctx, n); err != nil {
+			return Order{}, nil, err
+		}
 		return o, &n, nil
 	}
 	return o, nil, nil

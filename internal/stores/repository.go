@@ -1,63 +1,57 @@
 package stores
 
 import (
+	"context"
 	"errors"
-	"sync"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var ErrNotFound = errors.New("store not found")
 
 type Repo struct {
-	mu     sync.RWMutex
-	byID   map[string]Store
-	sorted []string
+	pool *pgxpool.Pool
 }
 
-func NewRepo() *Repo {
-	r := &Repo{byID: make(map[string]Store)}
-	for _, s := range seed() {
-		r.byID[s.ID] = s
-		r.sorted = append(r.sorted, s.ID)
+func NewRepo(pool *pgxpool.Pool) *Repo {
+	return &Repo{pool: pool}
+}
+
+func (r *Repo) List(ctx context.Context) ([]Store, error) {
+	const q = `SELECT id, name, address, city, state, zip, capacity, active FROM stores ORDER BY id`
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("query stores: %w", err)
 	}
-	return r
-}
+	defer rows.Close()
 
-func (r *Repo) List() []Store {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	out := make([]Store, 0, len(r.sorted))
-	for _, id := range r.sorted {
-		out = append(out, r.byID[id])
+	var out []Store
+	for rows.Next() {
+		var s Store
+		if err := rows.Scan(&s.ID, &s.Name, &s.Address, &s.City, &s.State, &s.ZIP, &s.Capacity, &s.Active); err != nil {
+			return nil, fmt.Errorf("scan store: %w", err)
+		}
+		out = append(out, s)
 	}
-	return out
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate stores: %w", err)
+	}
+	return out, nil
 }
 
-func (r *Repo) Get(id string) (Store, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	s, ok := r.byID[id]
-	if !ok {
-		return Store{}, ErrNotFound
+func (r *Repo) Get(ctx context.Context, id string) (Store, error) {
+	const q = `SELECT id, name, address, city, state, zip, capacity, active FROM stores WHERE id = $1`
+	var s Store
+	err := r.pool.QueryRow(ctx, q, id).Scan(
+		&s.ID, &s.Name, &s.Address, &s.City, &s.State, &s.ZIP, &s.Capacity, &s.Active,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Store{}, ErrNotFound
+		}
+		return Store{}, fmt.Errorf("get store: %w", err)
 	}
 	return s, nil
-}
-
-func seed() []Store {
-	return []Store{
-		{
-			ID: "store-sp-paulista", Name: "MegaLoja Paulista",
-			Address: "Av. Paulista, 1000", City: "São Paulo", State: "SP", ZIP: "01310-100",
-			Capacity: 50, Active: true,
-		},
-		{
-			ID: "store-rj-copacabana", Name: "MegaLoja Copacabana",
-			Address: "Av. Atlântica, 500", City: "Rio de Janeiro", State: "RJ", ZIP: "22010-000",
-			Capacity: 30, Active: true,
-		},
-		{
-			ID: "store-mg-savassi", Name: "MegaLoja Savassi",
-			Address: "R. Pernambuco, 200", City: "Belo Horizonte", State: "MG", ZIP: "30130-150",
-			Capacity: 20, Active: false,
-		},
-	}
 }
