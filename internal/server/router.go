@@ -16,6 +16,7 @@ func NewRouter(storesH *stores.Handler, ordersH *orders.Handler) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
+	r.Use(CORS)
 	r.Use(middleware.Recoverer)
 
 	r.Get("/healthz", healthz)
