@@ -1,0 +1,12 @@
+# local env
+.env
+
+# build artifacts
+bin/
+*.out
+coverage.*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
