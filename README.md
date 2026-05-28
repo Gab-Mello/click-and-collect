@@ -19,7 +19,7 @@ internal/config/        # env-based config loading
 internal/server/        # http.Server + chi router + graceful shutdown
 ```
 
-Domain packages (e.g. `internal/orders/`) are added as features arrive — each holds its own `handler.go`, `service.go`, `store.go`, `model.go`.
+Domain packages (e.g. `internal/orders/`) are added as features arrive — each holds its own `handler.go`, `service.go`, `repository.go`, `model.go`.
 
 ## Common tasks
 
