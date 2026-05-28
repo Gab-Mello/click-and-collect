@@ -1,6 +1,9 @@
 # click-and-collect
 
-A minimal Go REST API starter for learning and experimentation.
+A Go REST API for a college Click & Collect MVP.
+
+The project implements a backend for MegaLoja Online, allowing customers to create orders using standard delivery or pickup in store.
+
 
 ## Quickstart
 
