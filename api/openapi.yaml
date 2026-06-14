@@ -1,0 +1,529 @@
+openapi: 3.1.0
+info:
+  title: Click & Collect API
+  version: 0.1.0
+  summary: Backend for the MegaLoja Online Click & Collect MVP.
+  description: |
+    REST API for creating orders with either standard delivery or
+    pickup-in-store, listing stores, transitioning order status, and
+    retrieving order notifications.
+
+    All non-health endpoints are versioned under `/api/v1`.
+  contact:
+    name: click-and-collect
+    url: https://github.com/gab-mello/click-and-collect
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: health
+    description: Liveness/readiness probes.
+  - name: stores
+    description: Pickup stores. Read-only — managed via SQL migrations / seeds.
+  - name: orders
+    description: Customer orders and their lifecycle.
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      operationId: healthz
+      summary: Liveness probe (unversioned)
+      description: Returns `{"status":"ok"}` when the process is up. Mirrors `/api/v1/health`.
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /api/v1/health:
+    get:
+      tags: [health]
+      operationId: health
+      summary: Liveness probe
+      description: Returns `{"status":"ok"}` when the process is up.
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /api/v1/stores:
+    get:
+      tags: [stores]
+      operationId: list-stores
+      summary: List all stores
+      description: Returns every store known to the system, including inactive ones.
+      responses:
+        "200":
+          description: Stores list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StoresListResponse" }
+              examples:
+                seed:
+                  summary: Seeded stores
+                  value:
+                    stores:
+                      - id: store-sp-paulista
+                        name: MegaLoja Paulista
+                        address: "Av. Paulista, 1000"
+                        city: São Paulo
+                        state: SP
+                        zip: 01310-100
+                        capacity: 50
+                        active: true
+                      - id: store-rj-copacabana
+                        name: MegaLoja Copacabana
+                        address: "Av. Atlântica, 500"
+                        city: Rio de Janeiro
+                        state: RJ
+                        zip: 22010-000
+                        capacity: 30
+                        active: true
+                      - id: store-mg-savassi
+                        name: MegaLoja Savassi
+                        address: "R. Pernambuco, 200"
+                        city: Belo Horizonte
+                        state: MG
+                        zip: 30130-150
+                        capacity: 20
+                        active: false
+
+  /api/v1/stores/{id}:
+    get:
+      tags: [stores]
+      operationId: get-store
+      summary: Get a store by ID
+      parameters:
+        - $ref: "#/components/parameters/StoreID"
+      responses:
+        "200":
+          description: Store found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Store" }
+              examples:
+                paulista:
+                  value:
+                    id: store-sp-paulista
+                    name: MegaLoja Paulista
+                    address: "Av. Paulista, 1000"
+                    city: São Paulo
+                    state: SP
+                    zip: 01310-100
+                    capacity: 50
+                    active: true
+        "404":
+          description: Store not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                not_found:
+                  value: { error: "store not found", code: "store_not_found" }
+
+  /api/v1/orders:
+    post:
+      tags: [orders]
+      operationId: create-order
+      summary: Create a new order
+      description: |
+        Creates a new order. The body shape depends on `delivery_method`:
+
+        - `standard` — `pickup_store_id` MUST be omitted.
+        - `pickup_in_store` — `pickup_store_id` is required and must reference
+          an active store. The server generates a 6-digit `pickup_code`.
+
+        Newly-created orders always start in status `AWAITING_PREPARATION`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrderRequest" }
+            examples:
+              standard:
+                summary: Standard delivery
+                value:
+                  customer_name: Ada Lovelace
+                  customer_email: ada@example.com
+                  delivery_method: standard
+              pickup:
+                summary: Pickup in store
+                value:
+                  customer_name: Grace Hopper
+                  customer_email: grace@example.com
+                  delivery_method: pickup_in_store
+                  pickup_store_id: store-sp-paulista
+      responses:
+        "201":
+          description: Order created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+              examples:
+                pickup:
+                  value:
+                    id: 9f1c2a4b8d6e7012
+                    customer_name: Grace Hopper
+                    customer_email: grace@example.com
+                    delivery_method: pickup_in_store
+                    pickup_store_id: store-sp-paulista
+                    pickup_code: "428193"
+                    status: AWAITING_PREPARATION
+                    created_at: 2026-06-14T18:30:00Z
+                    updated_at: 2026-06-14T18:30:00Z
+        "400":
+          description: |
+            Validation error. The `code` field disambiguates which rule failed:
+
+            - `invalid_body` — JSON could not be decoded.
+            - `customer_name_required`
+            - `customer_email_required`
+            - `invalid_delivery_method`
+            - `pickup_store_required` — `pickup_in_store` without a store ID.
+            - `pickup_store_not_allowed` — `standard` with a store ID set.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                missing_name:
+                  value: { error: "customer name is required", code: "customer_name_required" }
+                pickup_store_required:
+                  value: { error: "pickup store is required for pickup_in_store orders", code: "pickup_store_required" }
+        "404":
+          description: Pickup store not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                not_found:
+                  value: { error: "store not found", code: "store_not_found" }
+        "409":
+          description: Pickup store exists but is not accepting pickups.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                inactive:
+                  value: { error: "selected store is not accepting pickups", code: "store_inactive" }
+
+  /api/v1/orders/{id}:
+    get:
+      tags: [orders]
+      operationId: get-order
+      summary: Get an order by ID
+      parameters:
+        - $ref: "#/components/parameters/OrderID"
+      responses:
+        "200":
+          description: Order found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+        "404":
+          description: Order not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                not_found:
+                  value: { error: "order not found", code: "order_not_found" }
+
+  /api/v1/orders/{id}/status:
+    patch:
+      tags: [orders]
+      operationId: update-order-status
+      summary: Update an order's status
+      description: |
+        Transitions the order to a new status. Allowed transitions:
+
+        - `AWAITING_PREPARATION` → `READY_FOR_PICKUP` or `CANCELLED`
+        - `READY_FOR_PICKUP` → `COLLECTED` or `CANCELLED`
+
+        When a `pickup_in_store` order moves to `READY_FOR_PICKUP`, a
+        notification is created and returned in the `notification` field.
+      parameters:
+        - $ref: "#/components/parameters/OrderID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateStatusRequest" }
+            examples:
+              ready:
+                value: { status: READY_FOR_PICKUP }
+              collected:
+                value: { status: COLLECTED }
+              cancelled:
+                value: { status: CANCELLED }
+      responses:
+        "200":
+          description: Order updated. `notification` is present only when the transition produced one (pickup-in-store going to `READY_FOR_PICKUP`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UpdateStatusResponse" }
+              examples:
+                ready_with_notification:
+                  value:
+                    order:
+                      id: 9f1c2a4b8d6e7012
+                      customer_name: Grace Hopper
+                      customer_email: grace@example.com
+                      delivery_method: pickup_in_store
+                      pickup_store_id: store-sp-paulista
+                      pickup_code: "428193"
+                      status: READY_FOR_PICKUP
+                      created_at: 2026-06-14T18:30:00Z
+                      updated_at: 2026-06-14T19:05:12Z
+                    notification:
+                      id: 0a1b2c3d4e5f6071
+                      order_id: 9f1c2a4b8d6e7012
+                      message: "Order 9f1c2a4b8d6e7012 is ready for pickup. Use code 428193."
+                      created_at: 2026-06-14T19:05:12Z
+        "400":
+          description: |
+            Validation error.
+
+            - `invalid_body` — JSON could not be decoded.
+            - `invalid_status` — value is not one of the four `Status` constants.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                invalid_status:
+                  value: { error: "invalid status", code: "invalid_status" }
+        "404":
+          description: Order not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                not_found:
+                  value: { error: "order not found", code: "order_not_found" }
+        "409":
+          description: The requested transition is not allowed from the current status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                invalid_transition:
+                  value: { error: "invalid status transition", code: "invalid_transition" }
+
+  /api/v1/orders/{id}/notifications:
+    get:
+      tags: [orders]
+      operationId: list-order-notifications
+      summary: List notifications for an order
+      description: Returns every notification produced for the order, oldest first. The order must exist.
+      parameters:
+        - $ref: "#/components/parameters/OrderID"
+      responses:
+        "200":
+          description: Notifications list (may be empty).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NotificationsResponse" }
+              examples:
+                one:
+                  value:
+                    notifications:
+                      - id: 0a1b2c3d4e5f6071
+                        order_id: 9f1c2a4b8d6e7012
+                        message: "Order 9f1c2a4b8d6e7012 is ready for pickup. Use code 428193."
+                        created_at: 2026-06-14T19:05:12Z
+        "404":
+          description: Order not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                not_found:
+                  value: { error: "order not found", code: "order_not_found" }
+
+components:
+  parameters:
+    StoreID:
+      name: id
+      in: path
+      required: true
+      description: Store identifier (slug, e.g. `store-sp-paulista`).
+      schema:
+        type: string
+        examples: [store-sp-paulista]
+    OrderID:
+      name: id
+      in: path
+      required: true
+      description: Order identifier (16 lowercase hex chars).
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{16}$"
+        examples: [9f1c2a4b8d6e7012]
+
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          examples: [ok]
+
+    Store:
+      type: object
+      required: [id, name, address, city, state, zip, capacity, active]
+      properties:
+        id:        { type: string,  examples: [store-sp-paulista] }
+        name:      { type: string,  examples: [MegaLoja Paulista] }
+        address:   { type: string,  examples: ["Av. Paulista, 1000"] }
+        city:      { type: string,  examples: [São Paulo] }
+        state:     { type: string,  examples: [SP] }
+        zip:       { type: string,  examples: [01310-100] }
+        capacity:  { type: integer, examples: [50] }
+        active:    { type: boolean, examples: [true] }
+
+    StoresListResponse:
+      type: object
+      required: [stores]
+      properties:
+        stores:
+          type: array
+          items: { $ref: "#/components/schemas/Store" }
+
+    DeliveryMethod:
+      type: string
+      enum: [standard, pickup_in_store]
+      description: |
+        - `standard` — shipping; no store involvement.
+        - `pickup_in_store` — customer picks up at `pickup_store_id`; server issues a `pickup_code`.
+
+    Status:
+      type: string
+      enum: [AWAITING_PREPARATION, READY_FOR_PICKUP, COLLECTED, CANCELLED]
+      description: Order lifecycle state. See `update-order-status` for allowed transitions.
+
+    Order:
+      type: object
+      required:
+        - id
+        - customer_name
+        - customer_email
+        - delivery_method
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          pattern: "^[0-9a-f]{16}$"
+          examples: [9f1c2a4b8d6e7012]
+        customer_name:
+          type: string
+          examples: [Grace Hopper]
+        customer_email:
+          type: string
+          format: email
+          examples: [grace@example.com]
+        delivery_method:
+          $ref: "#/components/schemas/DeliveryMethod"
+        pickup_store_id:
+          type: [string, "null"]
+          description: Set only when `delivery_method` is `pickup_in_store`.
+          examples: [store-sp-paulista]
+        pickup_code:
+          type: [string, "null"]
+          description: 6-digit code issued by the server for pickup-in-store orders.
+          pattern: "^[0-9]{6}$"
+          examples: ["428193"]
+        status:
+          $ref: "#/components/schemas/Status"
+        created_at:
+          type: string
+          format: date-time
+          examples: [2026-06-14T18:30:00Z]
+        updated_at:
+          type: string
+          format: date-time
+          examples: [2026-06-14T18:30:00Z]
+
+    CreateOrderRequest:
+      type: object
+      required: [customer_name, customer_email, delivery_method]
+      properties:
+        customer_name:
+          type: string
+          examples: [Grace Hopper]
+        customer_email:
+          type: string
+          format: email
+          examples: [grace@example.com]
+        delivery_method:
+          $ref: "#/components/schemas/DeliveryMethod"
+        pickup_store_id:
+          type: string
+          description: Required when `delivery_method` is `pickup_in_store`; must be omitted otherwise.
+          examples: [store-sp-paulista]
+
+    UpdateStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/Status"
+
+    Notification:
+      type: object
+      required: [id, order_id, message, created_at]
+      properties:
+        id:
+          type: string
+          pattern: "^[0-9a-f]{16}$"
+          examples: [0a1b2c3d4e5f6071]
+        order_id:
+          type: string
+          pattern: "^[0-9a-f]{16}$"
+          examples: [9f1c2a4b8d6e7012]
+        message:
+          type: string
+          examples: ["Order 9f1c2a4b8d6e7012 is ready for pickup. Use code 428193."]
+        created_at:
+          type: string
+          format: date-time
+          examples: [2026-06-14T19:05:12Z]
+
+    UpdateStatusResponse:
+      type: object
+      required: [order]
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        notification:
+          $ref: "#/components/schemas/Notification"
+          description: Present only when the transition produced a notification.
+
+    NotificationsResponse:
+      type: object
+      required: [notifications]
+      properties:
+        notifications:
+          type: array
+          items: { $ref: "#/components/schemas/Notification" }
+
+    Error:
+      type: object
+      required: [error]
+      description: Error envelope used by every non-2xx response.
+      properties:
+        error:
+          type: string
+          description: Human-readable message.
+          examples: ["order not found"]
+        code:
+          type: string
+          description: Stable machine-readable code; safe to switch on.
+          examples: [order_not_found]

@@ -26,14 +26,16 @@ Domain packages (e.g. `internal/orders/`) are added as features arrive — each 
 
 ## Common tasks
 
-| Command       | Description                |
-| ------------- | -------------------------- |
-| `make run`    | Run the API                |
-| `make build`  | Build binary to `bin/api`  |
-| `make test`   | Run tests with `-race`     |
-| `make fmt`    | Format code                |
-| `make tidy`   | Tidy `go.mod` / `go.sum`   |
-| `make migrate`| Apply SQL migrations       |
+| Command         | Description                |
+| --------------- | -------------------------- |
+| `make run`      | Run the API                |
+| `make build`    | Build binary to `bin/api`  |
+| `make test`     | Run tests with `-race`     |
+| `make fmt`      | Format code                |
+| `make tidy`     | Tidy `go.mod` / `go.sum`   |
+| `make migrate`  | Apply SQL migrations       |
+| `make docs-lint`    | Lint `api/openapi.yaml`         |
+| `make docs-preview` | Preview the spec with Redoc     |
 
 ## Conventions
 
@@ -98,6 +100,17 @@ make migrate   # requires psql + DATABASE_URL set in your env
 
 - API on your host, Postgres in Docker: `postgres://postgres:postgres@localhost:5432/click_collect?sslmode=disable` (this is what `.env.example` has).
 - Both API and Postgres in Docker: `compose` overrides the host to `postgres` (the service name on the compose network).
+
+## API documentation
+
+The API contract lives at [`api/openapi.yaml`](./api/openapi.yaml) (OpenAPI 3.1) and is the single source of truth for endpoints, schemas, and error codes.
+
+When the server is running, browse to:
+
+- **Swagger UI** — [`http://localhost:8080/docs`](http://localhost:8080/docs)
+- **Raw spec** — [`http://localhost:8080/openapi.yaml`](http://localhost:8080/openapi.yaml)
+
+The spec is hand-maintained — when you change a handler, update `api/openapi.yaml` in the same PR. Run `make docs-lint` before committing.
 
 ## Frontend integration
 

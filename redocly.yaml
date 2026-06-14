@@ -1,0 +1,18 @@
+# Redocly CLI config — see https://redocly.com/docs/cli/configuration/
+#
+# We want lint to catch real schema problems (broken $ref, unknown fields,
+# malformed examples). The rules disabled below are style opinions from
+# Redocly's "recommended" preset that don't fit this project:
+#
+# - security-defined          : the API has no auth; nothing to declare.
+# - info-license              : internal college MVP, no license metadata.
+# - no-server-example.com     : the only server is localhost, intentionally.
+# - operation-4xx-response    : the health probes really do return only 200.
+extends:
+  - recommended
+
+rules:
+  security-defined: off
+  info-license: off
+  no-server-example.com: off
+  operation-4xx-response: off

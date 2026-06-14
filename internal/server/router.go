@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/gab-mello/click-and-collect/internal/docs"
 	"github.com/gab-mello/click-and-collect/internal/orders"
 	"github.com/gab-mello/click-and-collect/internal/stores"
 	"github.com/go-chi/chi/v5"
@@ -20,6 +21,11 @@ func NewRouter(storesH *stores.Handler, ordersH *orders.Handler) http.Handler {
 	r.Use(middleware.Recoverer)
 
 	r.Get("/healthz", healthz)
+
+	// API documentation. Mounted outside /api/v1 so the URLs stay stable
+	// across API versions and are obviously not part of the contract.
+	r.Method(http.MethodGet, "/openapi.yaml", docs.SpecHandler())
+	r.Method(http.MethodGet, "/docs", docs.UIHandler())
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/health", healthz)
