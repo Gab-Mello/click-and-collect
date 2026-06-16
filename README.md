@@ -35,6 +35,12 @@ cp .env.example .env
 docker compose up --build
 ```
 
+Docker Compose starts Postgres first, then runs a one-shot `migrate` service that applies `migrations/0001_init.sql`, and finally starts the API.
+
+This keeps the local development setup simple: after a fresh clone, or after running `docker compose down -v`, the app starts with the database schema and seed stores already loaded, without any manual database setup.
+
+The migration is idempotent and intended for development only. In a production setup, migrations should be handled by a proper migration tool as part of the deployment process.
+
 The API will be available at `http://localhost:8080`. Stop with `docker compose down`.
 
 ## API documentation
