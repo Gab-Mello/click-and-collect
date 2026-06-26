@@ -31,10 +31,6 @@ func (h *Handler) Mount(r chi.Router) {
 	})
 }
 
-type createRequest struct {
-	CustomerEmail string `json:"customer_email"`
-}
-
 type addItemRequest struct {
 	ProductID string `json:"product_id"`
 	Quantity  int    `json:"quantity"`
@@ -56,13 +52,12 @@ type checkoutResponse struct {
 	Notification *orders.Notification `json:"notification,omitempty"`
 }
 
+// create starts a new anonymous ACTIVE cart. No request body is required —
+// customer identity is collected at checkout time, not here. The frontend
+// stores the returned cart id (e.g. in localStorage) and uses it for
+// subsequent calls until checkout.
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
-	var req createRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "invalid JSON body")
-		return
-	}
-	c, err := h.svc.Create(r.Context(), req.CustomerEmail)
+	c, err := h.svc.Create(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -160,7 +155,6 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		httpx.WriteError(w, http.StatusConflict, errCode(err), err.Error())
 
 	case errors.Is(err, ErrInvalidQuantity),
-		errors.Is(err, ErrCustomerEmailReq),
 		errors.Is(err, orders.ErrCustomerNameRequired),
 		errors.Is(err, orders.ErrCustomerEmailRequired),
 		errors.Is(err, orders.ErrInvalidDeliveryMethod),
@@ -183,8 +177,6 @@ func errCode(err error) string {
 		return "product_inactive"
 	case errors.Is(err, ErrInvalidQuantity):
 		return "invalid_quantity"
-	case errors.Is(err, ErrCustomerEmailReq):
-		return "customer_email_required"
 	case errors.Is(err, orders.ErrStoreInactive):
 		return "store_inactive"
 	case errors.Is(err, orders.ErrCustomerNameRequired):

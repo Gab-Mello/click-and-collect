@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/gab-mello/click-and-collect/internal/orders"
@@ -16,11 +15,10 @@ import (
 )
 
 var (
-	ErrCartNotActive    = errors.New("cart is not active")
-	ErrCartEmpty        = errors.New("cart has no items")
-	ErrInvalidQuantity  = errors.New("quantity must be greater than zero")
-	ErrProductInactive  = errors.New("product is not available")
-	ErrCustomerEmailReq = errors.New("customer email is required")
+	ErrCartNotActive   = errors.New("cart is not active")
+	ErrCartEmpty       = errors.New("cart has no items")
+	ErrInvalidQuantity = errors.New("quantity must be greater than zero")
+	ErrProductInactive = errors.New("product is not available")
 )
 
 type Service struct {
@@ -41,20 +39,16 @@ func NewService(repo *Repo, ps *products.Service, os *orders.Service, pool *pgxp
 	}
 }
 
-// Create starts a new ACTIVE cart for the given customer email.
-func (s *Service) Create(ctx context.Context, customerEmail string) (Cart, error) {
-	email := strings.TrimSpace(customerEmail)
-	if email == "" {
-		return Cart{}, ErrCustomerEmailReq
-	}
+// Create starts a new anonymous ACTIVE cart. Customer identity is collected
+// later, at checkout time, and stored on the resulting order — not the cart.
+func (s *Service) Create(ctx context.Context) (Cart, error) {
 	now := s.clock()
 	c := Cart{
-		ID:            newID(),
-		CustomerEmail: email,
-		Status:        StatusActive,
-		Items:         []CartItem{},
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:        newID(),
+		Status:    StatusActive,
+		Items:     []CartItem{},
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 	if err := s.repo.CreateCart(ctx, c); err != nil {
 		return Cart{}, err

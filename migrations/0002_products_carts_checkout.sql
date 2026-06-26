@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE TABLE IF NOT EXISTS carts (
   id             TEXT PRIMARY KEY,
-  customer_email TEXT NOT NULL,
   status         TEXT NOT NULL,
   created_at     TIMESTAMPTZ NOT NULL,
   updated_at     TIMESTAMPTZ NOT NULL

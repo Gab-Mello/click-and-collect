@@ -34,9 +34,9 @@ func NewRepo(pool *pgxpool.Pool) *Repo {
 
 func (r *Repo) CreateCart(ctx context.Context, c Cart) error {
 	const q = `
-		INSERT INTO carts (id, customer_email, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)`
-	if _, err := r.pool.Exec(ctx, q, c.ID, c.CustomerEmail, c.Status, c.CreatedAt, c.UpdatedAt); err != nil {
+		INSERT INTO carts (id, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4)`
+	if _, err := r.pool.Exec(ctx, q, c.ID, c.Status, c.CreatedAt, c.UpdatedAt); err != nil {
 		return fmt.Errorf("insert cart: %w", err)
 	}
 	return nil
@@ -44,10 +44,10 @@ func (r *Repo) CreateCart(ctx context.Context, c Cart) error {
 
 func (r *Repo) GetCart(ctx context.Context, id string) (Cart, error) {
 	const q = `
-		SELECT id, customer_email, status, created_at, updated_at
+		SELECT id, status, created_at, updated_at
 		FROM carts WHERE id = $1`
 	var c Cart
-	err := r.pool.QueryRow(ctx, q, id).Scan(&c.ID, &c.CustomerEmail, &c.Status, &c.CreatedAt, &c.UpdatedAt)
+	err := r.pool.QueryRow(ctx, q, id).Scan(&c.ID, &c.Status, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Cart{}, ErrCartNotFound
@@ -138,12 +138,12 @@ func (r *Repo) RemoveItem(ctx context.Context, cartID, productID string) error {
 // preventing concurrent checkouts of the same cart.
 func (r *Repo) LockCartTx(ctx context.Context, q dbtx, id string) (Cart, error) {
 	const sql = `
-		SELECT id, customer_email, status, created_at, updated_at
+		SELECT id, status, created_at, updated_at
 		FROM carts
 		WHERE id = $1
 		FOR UPDATE`
 	var c Cart
-	err := q.QueryRow(ctx, sql, id).Scan(&c.ID, &c.CustomerEmail, &c.Status, &c.CreatedAt, &c.UpdatedAt)
+	err := q.QueryRow(ctx, sql, id).Scan(&c.ID, &c.Status, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Cart{}, ErrCartNotFound

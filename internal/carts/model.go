@@ -18,12 +18,11 @@ func (s Status) Valid() bool {
 }
 
 type Cart struct {
-	ID            string     `json:"id"`
-	CustomerEmail string     `json:"customer_email"`
-	Status        Status     `json:"status"`
-	Items         []CartItem `json:"items"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID        string     `json:"id"`
+	Status    Status     `json:"status"`
+	Items     []CartItem `json:"items"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 type CartItem struct {

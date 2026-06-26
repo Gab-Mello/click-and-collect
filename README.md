@@ -93,10 +93,8 @@ This keeps the project focused on the Click & Collect flow. In a production e-co
 # 1. browse the catalog
 curl -s localhost:8080/api/v1/products | jq .
 
-# 2. create a cart
-CART=$(curl -s -X POST localhost:8080/api/v1/carts \
-  -H 'content-type: application/json' \
-  -d '{"customer_email":"grace@example.com"}' | jq -r .id)
+# 2. create a cart (anonymous — customer details are collected at checkout)
+CART=$(curl -s -X POST localhost:8080/api/v1/carts | jq -r .id)
 
 # 3. add items (re-posting the same product upserts the quantity)
 curl -s -X POST localhost:8080/api/v1/carts/$CART/items \

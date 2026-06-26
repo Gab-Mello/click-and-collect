@@ -174,32 +174,21 @@ paths:
       tags: [carts]
       operationId: create-cart
       summary: Create a new active cart
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CreateCartRequest" }
-            examples:
-              minimal:
-                value: { customer_email: grace@example.com }
+      description: |
+        Creates a new anonymous cart. **No request body is required** — the
+        cart represents an empty shopping basket. Customer identity
+        (`customer_name`, `customer_email`) is collected later, at checkout
+        time, and is stored on the resulting order rather than the cart.
+
+        The client (typically the frontend) should persist the returned
+        `id` — e.g. in `localStorage` — and use it for all subsequent
+        cart calls until checkout.
       responses:
         "201":
           description: Cart created. Status is always `ACTIVE` and `items` is empty.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Cart" }
-        "400":
-          description: |
-            Validation error.
-
-            - `invalid_body` — JSON could not be decoded.
-            - `customer_email_required`
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Error" }
-              examples:
-                missing_email:
-                  value: { error: "customer email is required", code: "customer_email_required" }
 
   /api/v1/carts/{id}:
     get:
@@ -789,16 +778,12 @@ components:
 
     Cart:
       type: object
-      required: [id, customer_email, status, items, created_at, updated_at]
+      required: [id, status, items, created_at, updated_at]
       properties:
         id:
           type: string
           pattern: "^[0-9a-f]{16}$"
           examples: [bc3458adb995135f]
-        customer_email:
-          type: string
-          format: email
-          examples: [grace@example.com]
         status:
           $ref: "#/components/schemas/CartStatus"
         items:
@@ -806,15 +791,6 @@ components:
           items: { $ref: "#/components/schemas/CartItem" }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
-
-    CreateCartRequest:
-      type: object
-      required: [customer_email]
-      properties:
-        customer_email:
-          type: string
-          format: email
-          examples: [grace@example.com]
 
     AddCartItemRequest:
       type: object
