@@ -22,6 +22,8 @@ tags:
     description: Liveness/readiness probes.
   - name: stores
     description: Pickup stores. Read-only — managed via SQL migrations / seeds.
+  - name: products
+    description: Product catalog. Read-only — managed via SQL migrations / seeds.
   - name: orders
     description: Customer orders and their lifecycle.
 
@@ -127,13 +129,54 @@ paths:
                 not_found:
                   value: { error: "store not found", code: "store_not_found" }
 
+  /api/v1/products:
+    get:
+      tags: [products]
+      operationId: list-products
+      summary: List all products
+      description: Returns every product known to the system, including inactive ones.
+      responses:
+        "200":
+          description: Products list.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductsListResponse" }
+
+  /api/v1/products/{id}:
+    get:
+      tags: [products]
+      operationId: get-product
+      summary: Get a product by ID
+      parameters:
+        - $ref: "#/components/parameters/ProductID"
+      responses:
+        "200":
+          description: Product found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "404":
+          description: Product not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                not_found:
+                  value: { error: "product not found", code: "product_not_found" }
+
   /api/v1/orders:
     post:
       tags: [orders]
       operationId: create-order
       summary: Create a new order
       description: |
-        Creates a new order. The body shape depends on `delivery_method`:
+        Creates a new order **without items**. This is the legacy entry point;
+        the canonical path is `POST /api/v1/carts/{id}/checkout`, which produces
+        an order with `items` and a computed `total_amount_cents`.
+
+        Orders created here will have `items: []` and `total_amount_cents: 0`.
+
+        The body shape depends on `delivery_method`:
 
         - `standard` — `pickup_store_id` MUST be omitted.
         - `pickup_in_store` — `pickup_store_id` is required and must reference
@@ -364,6 +407,14 @@ components:
         type: string
         pattern: "^[0-9a-f]{16}$"
         examples: [9f1c2a4b8d6e7012]
+    ProductID:
+      name: id
+      in: path
+      required: true
+      description: Product identifier (slug, e.g. `prod-headphones`).
+      schema:
+        type: string
+        examples: [prod-headphones]
 
   schemas:
     Health:
@@ -394,6 +445,39 @@ components:
         stores:
           type: array
           items: { $ref: "#/components/schemas/Store" }
+
+    Product:
+      type: object
+      required: [id, name, description, price_cents, image_url, active, created_at, updated_at]
+      properties:
+        id:          { type: string,  examples: [prod-headphones] }
+        name:        { type: string,  examples: [Wireless Headphones X1] }
+        description: { type: string,  examples: ["Bluetooth 5.3 with active noise cancel"] }
+        price_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Price in the smallest currency unit (BRL cents). Frontend formats as needed.
+          examples: [59900]
+        image_url:
+          type: string
+          description: |
+            Path to the product image. The backend only stores the path —
+            it does not upload, host, or serve image binaries. The frontend
+            is expected to provide the file at this path (e.g.
+            `frontend/public/products/headphones.jpg`).
+          examples: ["/products/headphones.jpg"]
+        active:      { type: boolean, examples: [true] }
+        created_at:  { type: string, format: date-time }
+        updated_at:  { type: string, format: date-time }
+
+    ProductsListResponse:
+      type: object
+      required: [products]
+      properties:
+        products:
+          type: array
+          items: { $ref: "#/components/schemas/Product" }
 
     DeliveryMethod:
       type: string
