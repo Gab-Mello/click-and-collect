@@ -485,6 +485,9 @@ paths:
                     pickup_store_id: store-sp-paulista
                     pickup_code: "428193"
                     status: AWAITING_PREPARATION
+                    cart_id: null
+                    total_amount_cents: 0
+                    items: []
                     created_at: 2026-06-14T18:30:00Z
                     updated_at: 2026-06-14T18:30:00Z
         "400":
@@ -588,6 +591,9 @@ paths:
                       pickup_store_id: store-sp-paulista
                       pickup_code: "428193"
                       status: READY_FOR_PICKUP
+                      cart_id: null
+                      total_amount_cents: 0
+                      items: []
                       created_at: 2026-06-14T18:30:00Z
                       updated_at: 2026-06-14T19:05:12Z
                     notification:
@@ -870,6 +876,8 @@ components:
         - customer_email
         - delivery_method
         - status
+        - total_amount_cents
+        - items
         - created_at
         - updated_at
       properties:
@@ -897,6 +905,29 @@ components:
           examples: ["428193"]
         status:
           $ref: "#/components/schemas/Status"
+        cart_id:
+          type: [string, "null"]
+          description: |
+            Set when the order was created via `POST /api/v1/carts/{id}/checkout`.
+            Null for orders created through the legacy `POST /api/v1/orders` path.
+          pattern: "^[0-9a-f]{16}$"
+          examples: [bc3458adb995135f]
+        total_amount_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Server-computed total over `items`. Always `0` for legacy orders
+            created via `POST /api/v1/orders` (which have no items).
+          examples: [129700]
+        items:
+          type: array
+          description: |
+            Snapshots of the products at checkout time. Empty array `[]` for
+            legacy orders. Each item carries the product name and unit price
+            captured at the moment the order was created, so historical orders
+            are unaffected by later product changes.
+          items: { $ref: "#/components/schemas/OrderItem" }
         created_at:
           type: string
           format: date-time
@@ -905,6 +936,27 @@ components:
           type: string
           format: date-time
           examples: [2026-06-14T18:30:00Z]
+
+    OrderItem:
+      type: object
+      required: [id, order_id, product_id, product_name, unit_price_cents, quantity, total_price_cents]
+      properties:
+        id:                 { type: string, pattern: "^[0-9a-f]{16}$" }
+        order_id:           { type: string, pattern: "^[0-9a-f]{16}$" }
+        product_id:         { type: string, examples: [prod-headphones] }
+        product_name:       { type: string, examples: [Wireless Headphones X1] }
+        unit_price_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          examples: [59900]
+        quantity:           { type: integer, minimum: 1, examples: [2] }
+        total_price_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: "Equals `unit_price_cents * quantity`."
+          examples: [119800]
 
     CreateOrderRequest:
       type: object
