@@ -24,7 +24,15 @@ services:
       - ./migrations:/migrations:ro
     environment:
       PGPASSWORD: postgres
-    entrypoint: ["sh", "-c", "psql -h postgres -U postgres -d click_collect -v ON_ERROR_STOP=1 -f /migrations/0001_init.sql"]
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        for f in /migrations/*.sql; do
+          echo "applying $$f"
+          psql -h postgres -U postgres -d click_collect -v ON_ERROR_STOP=1 -f "$$f"
+        done
     restart: "no"
 
   api:
