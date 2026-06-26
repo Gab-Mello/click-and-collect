@@ -41,7 +41,7 @@ docker compose up --build
 
 Docker Compose starts Postgres first, then runs a one-shot `migrate` service that applies every `migrations/*.sql` file in order (currently `0001_init.sql` for stores/orders/notifications and `0002_products_carts_checkout.sql` for products/carts/order_items plus the seeded product catalog), and finally starts the API.
 
-This keeps the local development setup simple: after a fresh clone, or after running `docker compose down -v`, the app starts with the database schema and seed stores already loaded, without any manual database setup.
+This keeps the local development setup simple: after a fresh clone, or after running `docker compose down -v`, the app starts with the database schema and seed data already loaded, without any manual database setup.
 
 The migration is idempotent and intended for development only. In a production setup, migrations should be handled by a proper migration tool as part of the deployment process.
 
@@ -71,21 +71,12 @@ CORS is enabled for these dev origins:
 
 ### Product images
 
-This is an academic MVP, so product image handling is deliberately kept as
-simple as possible: each product carries an `image_url` field that is just a
-path string (e.g. `/products/headphones.jpg`). The backend only stores and
-returns that path — it does **not** upload, process, host, or serve the
-image bytes themselves.
+Products include an `image_url` field with a static path such as `/products/headphones.jpg`.
 
-The frontend is responsible for providing the static files under its own
-public directory:
+For this college MVP, the backend only stores and returns this path. It does not upload, process, host, or serve product image files. The frontend is expected to provide the actual images from its static directory, for example:
 
 ```text
-frontend/public/products/smartphone.jpg
-frontend/public/products/notebook.jpg
 frontend/public/products/headphones.jpg
-frontend/public/products/mouse.jpg
-frontend/public/products/keyboard.jpg
 ```
 
 Then in the UI:
@@ -94,13 +85,7 @@ Then in the UI:
 <img src={product.image_url} alt={product.name} />
 ```
 
-This split sidesteps a lot of complexity that isn't relevant to the goal of
-the project: file uploads, object storage, CDN integration, image
-optimization, and backend static file hosting. A real production
-e-commerce system would typically push images to an object store / CDN and
-likely model product media as its own resource — but for a college MVP
-whose goal is to demonstrate the Click & Collect flow (not a full product
-media pipeline), frontend-controlled static paths are enough.
+This keeps the project focused on the Click & Collect flow. In a production e-commerce system, product images would usually be handled by object storage/CDN.
 
 ## End-to-end flow (curl)
 
