@@ -133,3 +133,60 @@ func (r *Repo) RemoveItem(ctx context.Context, cartID, productID string) error {
 	}
 	return nil
 }
+
+// LockCartTx selects the cart row FOR UPDATE inside the supplied transaction,
+// preventing concurrent checkouts of the same cart.
+func (r *Repo) LockCartTx(ctx context.Context, q dbtx, id string) (Cart, error) {
+	const sql = `
+		SELECT id, customer_email, status, created_at, updated_at
+		FROM carts
+		WHERE id = $1
+		FOR UPDATE`
+	var c Cart
+	err := q.QueryRow(ctx, sql, id).Scan(&c.ID, &c.CustomerEmail, &c.Status, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Cart{}, ErrCartNotFound
+		}
+		return Cart{}, fmt.Errorf("lock cart: %w", err)
+	}
+	return c, nil
+}
+
+func (r *Repo) ListItemsTx(ctx context.Context, q dbtx, cartID string) ([]CartItem, error) {
+	const sql = `
+		SELECT id, cart_id, product_id, quantity, created_at, updated_at
+		FROM cart_items
+		WHERE cart_id = $1
+		ORDER BY created_at`
+	rows, err := q.Query(ctx, sql, cartID)
+	if err != nil {
+		return nil, fmt.Errorf("query cart items: %w", err)
+	}
+	defer rows.Close()
+
+	out := []CartItem{}
+	for rows.Next() {
+		var it CartItem
+		if err := rows.Scan(&it.ID, &it.CartID, &it.ProductID, &it.Quantity, &it.CreatedAt, &it.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan cart item: %w", err)
+		}
+		out = append(out, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate cart items: %w", err)
+	}
+	return out, nil
+}
+
+func (r *Repo) MarkCheckedOutTx(ctx context.Context, q dbtx, cartID string, updatedAt time.Time) error {
+	const sql = `UPDATE carts SET status = $2, updated_at = $3 WHERE id = $1`
+	tag, err := q.Exec(ctx, sql, cartID, StatusCheckedOut, updatedAt)
+	if err != nil {
+		return fmt.Errorf("mark cart checked out: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrCartNotFound
+	}
+	return nil
+}
