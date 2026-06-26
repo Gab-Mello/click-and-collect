@@ -11,6 +11,7 @@ import (
 
 	"github.com/gab-mello/click-and-collect/internal/orders"
 	"github.com/gab-mello/click-and-collect/internal/products"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -143,6 +144,94 @@ func (s *Service) RemoveItem(ctx context.Context, cartID, productID string) (Car
 		return Cart{}, err
 	}
 	return s.Get(ctx, cartID)
+}
+
+// CheckoutInput is the request payload for converting a cart into an order.
+type CheckoutInput struct {
+	CustomerName   string
+	CustomerEmail  string
+	DeliveryMethod orders.DeliveryMethod
+	PickupStoreID  *string
+}
+
+// Checkout converts an ACTIVE non-empty cart into an order plus order_items
+// inside a single transaction. On any failure, the transaction rolls back and
+// the cart remains ACTIVE. Returns the created order (with items + total).
+func (s *Service) Checkout(ctx context.Context, cartID string, in CheckoutInput) (orders.Order, *orders.Notification, error) {
+	var (
+		out  orders.Order
+		note *orders.Notification
+	)
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		cart, err := s.repo.LockCartTx(ctx, tx, cartID)
+		if err != nil {
+			return err
+		}
+		if cart.Status != StatusActive {
+			return ErrCartNotActive
+		}
+
+		items, err := s.repo.ListItemsTx(ctx, tx, cartID)
+		if err != nil {
+			return err
+		}
+		if len(items) == 0 {
+			return ErrCartEmpty
+		}
+
+		orderItems, total, err := s.snapshotItems(ctx, items)
+		if err != nil {
+			return err
+		}
+
+		cartIDCopy := cart.ID
+		o, n, err := s.orders.CheckoutTx(ctx, tx, orders.CheckoutInput{
+			CustomerName:     in.CustomerName,
+			CustomerEmail:    in.CustomerEmail,
+			DeliveryMethod:   in.DeliveryMethod,
+			PickupStoreID:    in.PickupStoreID,
+			CartID:           &cartIDCopy,
+			Items:            orderItems,
+			TotalAmountCents: total,
+		})
+		if err != nil {
+			return err
+		}
+		if err := s.repo.MarkCheckedOutTx(ctx, tx, cart.ID, s.clock()); err != nil {
+			return err
+		}
+
+		out, note = o, n
+		return nil
+	})
+	return out, note, err
+}
+
+// snapshotItems looks up every product currently in the cart, rejects inactive
+// ones, and produces order items with the product name and unit price
+// captured at this moment. The returned total is the sum of total_price_cents.
+func (s *Service) snapshotItems(ctx context.Context, items []CartItem) ([]orders.OrderItem, int64, error) {
+	out := make([]orders.OrderItem, 0, len(items))
+	var total int64
+	for _, it := range items {
+		p, err := s.products.Get(ctx, it.ProductID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if !p.Active {
+			return nil, 0, ErrProductInactive
+		}
+		line := orders.OrderItem{
+			ProductID:       p.ID,
+			ProductName:     p.Name,
+			UnitPriceCents:  p.PriceCents,
+			Quantity:        it.Quantity,
+			TotalPriceCents: p.PriceCents * int64(it.Quantity),
+		}
+		out = append(out, line)
+		total += line.TotalPriceCents
+	}
+	return out, total, nil
 }
 
 func newID() string {
