@@ -21,11 +21,12 @@ func NewRepo(pool *pgxpool.Pool) *Repo {
 
 func (r *Repo) Create(ctx context.Context, o Order) error {
 	const q = `
-		INSERT INTO orders (id, customer_name, customer_email, delivery_method, pickup_store_id, pickup_code, status, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+		INSERT INTO orders (id, customer_name, customer_email, delivery_method, pickup_store_id, pickup_code, status, cart_id, total_amount_cents, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 	_, err := r.pool.Exec(ctx, q,
 		o.ID, o.CustomerName, o.CustomerEmail, o.DeliveryMethod,
-		o.PickupStoreID, o.PickupCode, o.Status, o.CreatedAt, o.UpdatedAt,
+		o.PickupStoreID, o.PickupCode, o.Status, o.CartID, o.TotalAmountCents,
+		o.CreatedAt, o.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert order: %w", err)
@@ -35,12 +36,13 @@ func (r *Repo) Create(ctx context.Context, o Order) error {
 
 func (r *Repo) Get(ctx context.Context, id string) (Order, error) {
 	const q = `
-		SELECT id, customer_name, customer_email, delivery_method, pickup_store_id, pickup_code, status, created_at, updated_at
+		SELECT id, customer_name, customer_email, delivery_method, pickup_store_id, pickup_code, status, cart_id, total_amount_cents, created_at, updated_at
 		FROM orders WHERE id = $1`
 	var o Order
 	err := r.pool.QueryRow(ctx, q, id).Scan(
 		&o.ID, &o.CustomerName, &o.CustomerEmail, &o.DeliveryMethod,
-		&o.PickupStoreID, &o.PickupCode, &o.Status, &o.CreatedAt, &o.UpdatedAt,
+		&o.PickupStoreID, &o.PickupCode, &o.Status, &o.CartID, &o.TotalAmountCents,
+		&o.CreatedAt, &o.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -48,6 +50,11 @@ func (r *Repo) Get(ctx context.Context, id string) (Order, error) {
 		}
 		return Order{}, fmt.Errorf("get order: %w", err)
 	}
+	items, err := r.GetItems(ctx, o.ID)
+	if err != nil {
+		return Order{}, err
+	}
+	o.Items = items
 	return o, nil
 }
 
@@ -55,11 +62,13 @@ func (r *Repo) Update(ctx context.Context, o Order) error {
 	const q = `
 		UPDATE orders
 		SET customer_name = $2, customer_email = $3, delivery_method = $4,
-		    pickup_store_id = $5, pickup_code = $6, status = $7, updated_at = $8
+		    pickup_store_id = $5, pickup_code = $6, status = $7,
+		    cart_id = $8, total_amount_cents = $9, updated_at = $10
 		WHERE id = $1`
 	tag, err := r.pool.Exec(ctx, q,
 		o.ID, o.CustomerName, o.CustomerEmail, o.DeliveryMethod,
-		o.PickupStoreID, o.PickupCode, o.Status, o.UpdatedAt,
+		o.PickupStoreID, o.PickupCode, o.Status,
+		o.CartID, o.TotalAmountCents, o.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("update order: %w", err)
@@ -68,6 +77,35 @@ func (r *Repo) Update(ctx context.Context, o Order) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *Repo) GetItems(ctx context.Context, orderID string) ([]OrderItem, error) {
+	const q = `
+		SELECT id, order_id, product_id, product_name, unit_price_cents, quantity, total_price_cents
+		FROM order_items
+		WHERE order_id = $1
+		ORDER BY id`
+	rows, err := r.pool.Query(ctx, q, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("query order items: %w", err)
+	}
+	defer rows.Close()
+
+	out := []OrderItem{}
+	for rows.Next() {
+		var it OrderItem
+		if err := rows.Scan(
+			&it.ID, &it.OrderID, &it.ProductID, &it.ProductName,
+			&it.UnitPriceCents, &it.Quantity, &it.TotalPriceCents,
+		); err != nil {
+			return nil, fmt.Errorf("scan order item: %w", err)
+		}
+		out = append(out, it)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate order items: %w", err)
+	}
+	return out, nil
 }
 
 func (r *Repo) AddNotification(ctx context.Context, n Notification) error {
