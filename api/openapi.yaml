@@ -24,6 +24,11 @@ tags:
     description: Pickup stores. Read-only — managed via SQL migrations / seeds.
   - name: products
     description: Product catalog. Read-only — managed via SQL migrations / seeds.
+  - name: carts
+    description: |
+      Persistent shopping carts. A cart starts as `ACTIVE`, accumulates items,
+      and is converted into an order via the checkout endpoint, after which it
+      becomes `CHECKED_OUT` and immutable.
   - name: orders
     description: Customer orders and their lifecycle.
 
@@ -163,6 +168,268 @@ paths:
               examples:
                 not_found:
                   value: { error: "product not found", code: "product_not_found" }
+
+  /api/v1/carts:
+    post:
+      tags: [carts]
+      operationId: create-cart
+      summary: Create a new active cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCartRequest" }
+            examples:
+              minimal:
+                value: { customer_email: grace@example.com }
+      responses:
+        "201":
+          description: Cart created. Status is always `ACTIVE` and `items` is empty.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400":
+          description: |
+            Validation error.
+
+            - `invalid_body` — JSON could not be decoded.
+            - `customer_email_required`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                missing_email:
+                  value: { error: "customer email is required", code: "customer_email_required" }
+
+  /api/v1/carts/{id}:
+    get:
+      tags: [carts]
+      operationId: get-cart
+      summary: Get a cart by ID (items hydrated)
+      parameters:
+        - $ref: "#/components/parameters/CartID"
+      responses:
+        "200":
+          description: Cart found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "404":
+          description: Cart not found.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                not_found:
+                  value: { error: "cart not found", code: "cart_not_found" }
+
+  /api/v1/carts/{id}/items:
+    post:
+      tags: [carts]
+      operationId: add-cart-item
+      summary: Add (or increase quantity of) an item in the cart
+      description: |
+        Upserts the `(cart_id, product_id)` pair. If the item already exists,
+        `quantity` is **added** to the current value. Returns the hydrated cart.
+
+        The cart must be `ACTIVE`. The product must exist and be `active`.
+      parameters:
+        - $ref: "#/components/parameters/CartID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddCartItemRequest" }
+            examples:
+              add_two:
+                value: { product_id: prod-headphones, quantity: 2 }
+      responses:
+        "200":
+          description: Item upserted. Cart returned with hydrated items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400":
+          description: |
+            Validation error.
+
+            - `invalid_body`
+            - `invalid_quantity` — `quantity` must be greater than zero.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: |
+            Cart or product not found. The `code` distinguishes:
+
+            - `cart_not_found`
+            - `product_not_found`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            Business rule violation.
+
+            - `cart_not_active` — cart has already been checked out.
+            - `product_inactive` — product exists but is not for sale.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/carts/{id}/items/{product_id}:
+    patch:
+      tags: [carts]
+      operationId: update-cart-item-quantity
+      summary: Set the quantity of an existing cart item
+      description: Overwrites the quantity (does not add to it). The cart must be `ACTIVE` and the line must exist.
+      parameters:
+        - $ref: "#/components/parameters/CartID"
+        - $ref: "#/components/parameters/CartItemProductID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCartItemRequest" }
+            examples:
+              set_to_two:
+                value: { quantity: 2 }
+      responses:
+        "200":
+          description: Item updated. Cart returned with hydrated items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "400":
+          description: |
+            - `invalid_body`
+            - `invalid_quantity`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: |
+            - `cart_not_found`
+            - `cart_item_not_found`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            - `cart_not_active`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [carts]
+      operationId: remove-cart-item
+      summary: Remove a line from the cart
+      parameters:
+        - $ref: "#/components/parameters/CartID"
+        - $ref: "#/components/parameters/CartItemProductID"
+      responses:
+        "200":
+          description: Item removed. Cart returned with the remaining items.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cart" }
+        "404":
+          description: |
+            - `cart_not_found`
+            - `cart_item_not_found`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            - `cart_not_active`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/carts/{id}/checkout:
+    post:
+      tags: [carts]
+      operationId: checkout-cart
+      summary: Convert an active cart into an order
+      description: |
+        Transactional cart checkout — the canonical way to create an order
+        with items.
+
+        Steps performed inside a single transaction:
+
+        1. Lock the cart row.
+        2. Verify the cart is `ACTIVE` and has at least one item.
+        3. Re-read every product; reject inactive ones.
+        4. Snapshot product `name` and `unit_price_cents` into `order_items` —
+           future product price/name changes will not retroactively affect
+           past orders.
+        5. Compute `total_amount_cents` server-side.
+        6. Apply the same delivery-method / pickup-store validation as
+           `POST /api/v1/orders` (pickup orders require an active store and
+           get a 6-digit `pickup_code`).
+        7. Mark the cart `CHECKED_OUT`.
+
+        Any failure rolls back; the cart remains `ACTIVE` and no partial
+        order is persisted.
+      parameters:
+        - $ref: "#/components/parameters/CartID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CheckoutRequest" }
+            examples:
+              standard:
+                summary: Standard delivery
+                value:
+                  customer_name: Grace Hopper
+                  customer_email: grace@example.com
+                  delivery_method: standard
+              pickup:
+                summary: Pickup in store
+                value:
+                  customer_name: Grace Hopper
+                  customer_email: grace@example.com
+                  delivery_method: pickup_in_store
+                  pickup_store_id: store-sp-paulista
+      responses:
+        "201":
+          description: Cart was checked out. Returns the created order (and a notification slot for symmetry with other endpoints — always null on checkout because the order starts in `AWAITING_PREPARATION`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CheckoutResponse" }
+        "400":
+          description: |
+            Validation error.
+
+            - `invalid_body`
+            - `customer_name_required`
+            - `customer_email_required`
+            - `invalid_delivery_method`
+            - `pickup_store_required`
+            - `pickup_store_not_allowed`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: |
+            - `cart_not_found`
+            - `store_not_found`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: |
+            Business rule violation.
+
+            - `cart_not_active`
+            - `cart_empty`
+            - `product_inactive`
+            - `store_inactive`
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /api/v1/orders:
     post:
@@ -415,6 +682,23 @@ components:
       schema:
         type: string
         examples: [prod-headphones]
+    CartID:
+      name: id
+      in: path
+      required: true
+      description: Cart identifier (16 lowercase hex chars).
+      schema:
+        type: string
+        pattern: "^[0-9a-f]{16}$"
+        examples: [bc3458adb995135f]
+    CartItemProductID:
+      name: product_id
+      in: path
+      required: true
+      description: Product identifier of the cart line to act on.
+      schema:
+        type: string
+        examples: [prod-headphones]
 
   schemas:
     Health:
@@ -478,6 +762,93 @@ components:
         products:
           type: array
           items: { $ref: "#/components/schemas/Product" }
+
+    CartStatus:
+      type: string
+      enum: [ACTIVE, CHECKED_OUT]
+      description: |
+        - `ACTIVE` — items may be added, updated, or removed; the cart can be checked out.
+        - `CHECKED_OUT` — the cart was converted into an order and is now immutable.
+
+    CartItem:
+      type: object
+      required: [id, cart_id, product_id, quantity, created_at, updated_at]
+      properties:
+        id:         { type: string, pattern: "^[0-9a-f]{16}$" }
+        cart_id:    { type: string, pattern: "^[0-9a-f]{16}$" }
+        product_id: { type: string, examples: [prod-headphones] }
+        quantity:   { type: integer, minimum: 1, examples: [2] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Cart:
+      type: object
+      required: [id, customer_email, status, items, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          pattern: "^[0-9a-f]{16}$"
+          examples: [bc3458adb995135f]
+        customer_email:
+          type: string
+          format: email
+          examples: [grace@example.com]
+        status:
+          $ref: "#/components/schemas/CartStatus"
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CartItem" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateCartRequest:
+      type: object
+      required: [customer_email]
+      properties:
+        customer_email:
+          type: string
+          format: email
+          examples: [grace@example.com]
+
+    AddCartItemRequest:
+      type: object
+      required: [product_id, quantity]
+      properties:
+        product_id: { type: string, examples: [prod-headphones] }
+        quantity:   { type: integer, minimum: 1, examples: [2] }
+
+    UpdateCartItemRequest:
+      type: object
+      required: [quantity]
+      properties:
+        quantity: { type: integer, minimum: 1, examples: [2] }
+
+    CheckoutRequest:
+      type: object
+      required: [customer_name, customer_email, delivery_method]
+      properties:
+        customer_name:  { type: string, examples: [Grace Hopper] }
+        customer_email: { type: string, format: email, examples: [grace@example.com] }
+        delivery_method:
+          $ref: "#/components/schemas/DeliveryMethod"
+        pickup_store_id:
+          type: string
+          description: Required when `delivery_method` is `pickup_in_store`; must be omitted otherwise.
+          examples: [store-sp-paulista]
+
+    CheckoutResponse:
+      type: object
+      required: [order]
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        notification:
+          $ref: "#/components/schemas/Notification"
+          description: |
+            Reserved for symmetry with other endpoints. Always omitted on
+            checkout because new orders start in `AWAITING_PREPARATION` and
+            notifications are only emitted on the transition to
+            `READY_FOR_PICKUP`.
 
     DeliveryMethod:
       type: string
