@@ -16,11 +16,11 @@ import (
 )
 
 var (
-	ErrCartNotActive       = errors.New("cart is not active")
-	ErrCartEmpty           = errors.New("cart has no items")
-	ErrInvalidQuantity     = errors.New("quantity must be greater than zero")
-	ErrProductInactive     = errors.New("product is not available")
-	ErrCustomerEmailReq    = errors.New("customer email is required")
+	ErrCartNotActive    = errors.New("cart is not active")
+	ErrCartEmpty        = errors.New("cart has no items")
+	ErrInvalidQuantity  = errors.New("quantity must be greater than zero")
+	ErrProductInactive  = errors.New("product is not available")
+	ErrCustomerEmailReq = errors.New("customer email is required")
 )
 
 type Service struct {
