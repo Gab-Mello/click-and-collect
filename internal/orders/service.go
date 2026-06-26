@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gab-mello/click-and-collect/internal/stores"
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -95,6 +96,89 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Order, error) {
 
 func (s *Service) Get(ctx context.Context, id string) (Order, error) {
 	return s.repo.Get(ctx, id)
+}
+
+// CheckoutInput carries everything needed to create a cart-driven order
+// inside a caller-managed transaction. Items and TotalAmountCents are
+// computed by the caller (the carts service snapshots product name and
+// unit price at checkout time).
+type CheckoutInput struct {
+	CustomerName     string
+	CustomerEmail    string
+	DeliveryMethod   DeliveryMethod
+	PickupStoreID    *string
+	CartID           *string
+	Items            []OrderItem
+	TotalAmountCents int64
+}
+
+// CheckoutTx creates an order and its items inside the supplied transaction.
+// It runs the same customer/delivery/store validation as Create. The order
+// starts in AWAITING_PREPARATION, so no notification is emitted here.
+func (s *Service) CheckoutTx(ctx context.Context, tx pgx.Tx, in CheckoutInput) (Order, *Notification, error) {
+	if strings.TrimSpace(in.CustomerName) == "" {
+		return Order{}, nil, ErrCustomerNameRequired
+	}
+	if strings.TrimSpace(in.CustomerEmail) == "" {
+		return Order{}, nil, ErrCustomerEmailRequired
+	}
+	if !in.DeliveryMethod.Valid() {
+		return Order{}, nil, ErrInvalidDeliveryMethod
+	}
+
+	now := s.clock()
+	o := Order{
+		ID:               newID(),
+		CustomerName:     strings.TrimSpace(in.CustomerName),
+		CustomerEmail:    strings.TrimSpace(in.CustomerEmail),
+		DeliveryMethod:   in.DeliveryMethod,
+		Status:           StatusAwaitingPreparation,
+		CartID:           in.CartID,
+		TotalAmountCents: in.TotalAmountCents,
+		Items:            in.Items,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+
+	switch in.DeliveryMethod {
+	case DeliveryStandard:
+		if in.PickupStoreID != nil {
+			return Order{}, nil, ErrPickupStoreNotAllowed
+		}
+	case DeliveryPickupInStore:
+		if in.PickupStoreID == nil || strings.TrimSpace(*in.PickupStoreID) == "" {
+			return Order{}, nil, ErrPickupStoreRequired
+		}
+		store, err := s.stores.Get(ctx, *in.PickupStoreID)
+		if err != nil {
+			return Order{}, nil, err
+		}
+		if !store.Active {
+			return Order{}, nil, ErrStoreInactive
+		}
+		storeID := store.ID
+		code := newPickupCode()
+		o.PickupStoreID = &storeID
+		o.PickupCode = &code
+	}
+
+	if err := s.repo.CreateTx(ctx, tx, o); err != nil {
+		return Order{}, nil, err
+	}
+
+	// Stamp every item with the new order ID before inserting.
+	for i := range o.Items {
+		o.Items[i].OrderID = o.ID
+		if o.Items[i].ID == "" {
+			o.Items[i].ID = newID()
+		}
+	}
+	if len(o.Items) > 0 {
+		if err := s.repo.AddItemsTx(ctx, tx, o.Items); err != nil {
+			return Order{}, nil, err
+		}
+	}
+	return o, nil, nil
 }
 
 func (s *Service) ListNotifications(ctx context.Context, orderID string) ([]Notification, error) {
