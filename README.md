@@ -71,10 +71,14 @@ CORS is enabled for these dev origins:
 
 ### Product images
 
-The `image_url` field on each product is just a path string (e.g.
-`/products/headphones.jpg`). The backend does **not** upload, host, or serve
-product images — it only stores and returns the path. The frontend is
-expected to provide the actual binaries from its own static directory:
+This is an academic MVP, so product image handling is deliberately kept as
+simple as possible: each product carries an `image_url` field that is just a
+path string (e.g. `/products/headphones.jpg`). The backend only stores and
+returns that path — it does **not** upload, process, host, or serve the
+image bytes themselves.
+
+The frontend is responsible for providing the static files under its own
+public directory:
 
 ```text
 frontend/public/products/smartphone.jpg
@@ -90,8 +94,13 @@ Then in the UI:
 <img src={product.image_url} alt={product.name} />
 ```
 
-This is intentional for the MVP to keep the backend focused on the order
-flow rather than object storage or CDN integration.
+This split sidesteps a lot of complexity that isn't relevant to the goal of
+the project: file uploads, object storage, CDN integration, image
+optimization, and backend static file hosting. A real production
+e-commerce system would typically push images to an object store / CDN and
+likely model product media as its own resource — but for a college MVP
+whose goal is to demonstrate the Click & Collect flow (not a full product
+media pipeline), frontend-controlled static paths are enough.
 
 ## End-to-end flow (curl)
 
