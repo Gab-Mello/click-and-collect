@@ -54,13 +54,15 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (Order, error) {
 
 	now := s.clock()
 	o := Order{
-		ID:             newID(),
-		CustomerName:   strings.TrimSpace(in.CustomerName),
-		CustomerEmail:  strings.TrimSpace(in.CustomerEmail),
-		DeliveryMethod: in.DeliveryMethod,
-		Status:         StatusAwaitingPreparation,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:               newID(),
+		CustomerName:     strings.TrimSpace(in.CustomerName),
+		CustomerEmail:    strings.TrimSpace(in.CustomerEmail),
+		DeliveryMethod:   in.DeliveryMethod,
+		Status:           StatusAwaitingPreparation,
+		TotalAmountCents: 0,
+		Items:            []OrderItem{},
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
 	switch in.DeliveryMethod {
