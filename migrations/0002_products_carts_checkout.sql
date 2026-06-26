@@ -47,3 +47,11 @@ CREATE TABLE IF NOT EXISTS order_items (
 
 CREATE INDEX IF NOT EXISTS order_items_order_id_idx   ON order_items(order_id);
 CREATE INDEX IF NOT EXISTS order_items_product_id_idx ON order_items(product_id);
+
+INSERT INTO products (id, name, description, price_cents, image_url, active, created_at, updated_at) VALUES
+  ('prod-smartphone', 'Smartphone Galaxy A55',  '6.6" 256GB display, 8GB RAM',          199900, '/products/smartphone.jpg', TRUE, now(), now()),
+  ('prod-notebook',   'Notebook Pro 14',        'Ryzen 7, 16GB RAM, 512GB SSD',         549900, '/products/notebook.jpg',   TRUE, now(), now()),
+  ('prod-headphones', 'Wireless Headphones X1', 'Bluetooth 5.3 with active noise cancel', 59900, '/products/headphones.jpg', TRUE, now(), now()),
+  ('prod-mouse',      'Wireless Mouse M2',      'Ergonomic 2.4GHz, 18-month battery',     9900, '/products/mouse.jpg',      TRUE, now(), now()),
+  ('prod-keyboard',   'Mechanical Keyboard K1', 'Hot-swap switches, RGB backlighting',   29900, '/products/keyboard.jpg',   TRUE, now(), now())
+ON CONFLICT (id) DO NOTHING;
