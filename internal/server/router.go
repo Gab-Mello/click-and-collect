@@ -4,14 +4,16 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/gab-mello/click-and-collect/internal/carts"
 	"github.com/gab-mello/click-and-collect/internal/docs"
 	"github.com/gab-mello/click-and-collect/internal/orders"
+	"github.com/gab-mello/click-and-collect/internal/products"
 	"github.com/gab-mello/click-and-collect/internal/stores"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func NewRouter(storesH *stores.Handler, ordersH *orders.Handler) http.Handler {
+func NewRouter(storesH *stores.Handler, productsH *products.Handler, cartsH *carts.Handler, ordersH *orders.Handler) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -30,6 +32,8 @@ func NewRouter(storesH *stores.Handler, ordersH *orders.Handler) http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/health", healthz)
 		storesH.Mount(r)
+		productsH.Mount(r)
+		cartsH.Mount(r)
 		ordersH.Mount(r)
 	})
 

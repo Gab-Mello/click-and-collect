@@ -9,9 +9,11 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/gab-mello/click-and-collect/internal/carts"
 	"github.com/gab-mello/click-and-collect/internal/config"
 	"github.com/gab-mello/click-and-collect/internal/db"
 	"github.com/gab-mello/click-and-collect/internal/orders"
+	"github.com/gab-mello/click-and-collect/internal/products"
 	"github.com/gab-mello/click-and-collect/internal/server"
 	"github.com/gab-mello/click-and-collect/internal/stores"
 )
@@ -47,11 +49,19 @@ func run() error {
 	storesSvc := stores.NewService(storesRepo)
 	storesH := stores.NewHandler(storesSvc)
 
+	productsRepo := products.NewRepo(pool)
+	productsSvc := products.NewService(productsRepo)
+	productsH := products.NewHandler(productsSvc)
+
 	ordersRepo := orders.NewRepo(pool)
 	ordersSvc := orders.NewService(ordersRepo, storesSvc)
 	ordersH := orders.NewHandler(ordersSvc)
 
-	router := server.NewRouter(storesH, ordersH)
+	cartsRepo := carts.NewRepo(pool)
+	cartsSvc := carts.NewService(cartsRepo, productsSvc, ordersSvc, pool)
+	cartsH := carts.NewHandler(cartsSvc)
+
+	router := server.NewRouter(storesH, productsH, cartsH, ordersH)
 	srv := server.New(cfg, logger, router)
 
 	return srv.Run(ctx)
